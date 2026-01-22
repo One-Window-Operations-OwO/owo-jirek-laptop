@@ -212,8 +212,7 @@ export default function Home() {
       });
       const json = await res.json();
       if (json.success) {
-        // Sort by Date (optional) or just use as is
-        const filtered = json.data.filter((item: any) => item.type === "Zyrex" && item.status === "PROSES");
+        const filtered = json.data.filter((item: any) => item.type === "Zyrex" && item.status === "PROSES" && item.npsn === "10100871");
 
         if (
           typeof window !== "undefined" &&
@@ -625,7 +624,7 @@ export default function Home() {
       id_user: id,
       npsn: currentItem.npsn,
       sn_penyedia: currentItem.serial_number,
-      cek_sn_penyedia: "0",
+      cek_sn_penyedia: currentItem.cek_sn_penyedia,
       id_update: currentItem.action_id,
       no_bapp: currentItem.bapp,
       ket_tgl_bapp: evaluationForm["F"],

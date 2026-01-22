@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     // 8: Sekolah
     // 9: ID (href link)
     // Note: Removed </tr> check as it might be missing in some rows
-    const regex = /<tr[^>]*>\s*<td[^>]*>\s*(\d+)\s*<\/td>.*?<td[^>]*>(.*?)<\/td>.*?<td[^>]*>(.*?)<\/td>.*?<td[^>]*>(.*?)<\/td>.*?<td[^>]*>.*?>(.*?)<\/button>.*?<td[^>]*>.*?>(.*?)<\/button>.*?<td[^>]*>\s*(.*?)\s*<\/td>.*?<td[^>]*>\s*(.*?)\s*<\/td>.*?<td[^>]*>\s*(?:<a[^>]*href="[^"]*\/form\/(\d+)")?.*?<button[^>]*>\s*(.*?)\s*<\/button>/gs;
+    const regex = /<tr[^>]*>[\s\S]*?<td[^>]*>\s*(\d+)\s*<\/td>[\s\S]*?<td[^>]*>([\s\S]*?)<\/td>[\s\S]*?<td[^>]*>([\s\S]*?)<\/td>[\s\S]*?<td[^>]*>([\s\S]*?)<\/td>[\s\S]*?<td[^>]*>[\s\S]*?>([\s\S]*?)<\/button>[\s\S]*?<td[^>]*>[\s\S]*?class="[^"]*btn-(danger|success|warning|primary|info)[^"]*"[^>]*>([\s\S]*?)<\/button>[\s\S]*?<td[^>]*>\s*([\s\S]*?)\s*<\/td>[\s\S]*?<td[^>]*>\s*([\s\S]*?)\s*<\/td>[\s\S]*?<td[^>]*>\s*(?:<a[^>]*href="[^"]*\/form\/(\d+)")?[\s\S]*?<button[^>]*>\s*([\s\S]*?)\s*<\/button>/gm;
     const results = [];
     let match;
 
@@ -65,11 +65,12 @@ export async function POST(request: Request) {
         type: clean(match[2]),
         date: clean(match[3]),
         no_bapp: clean(match[5]),
-        serial_number: clean(match[6]),
-        npsn: clean(match[7]),
-        nama_sekolah: clean(match[8]),
-        action_id: match[9] ? clean(match[9]) : null,
-        status: clean(match[10]),
+        cek_sn_penyedia: clean(match[6]) == "danger" ? "2" : "0",
+        serial_number: clean(match[7]),
+        npsn: clean(match[8]),
+        nama_sekolah: clean(match[9]),
+        action_id: match[10] ? clean(match[10]) : null,
+        status: clean(match[11]),
       });
     }
 
