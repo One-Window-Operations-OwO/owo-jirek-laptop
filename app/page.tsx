@@ -285,6 +285,7 @@ export default function Home() {
 
   const handleSelectItem = async (item: any) => {
     setCurrentImageIndex(null); // Reset image viewer
+    setParsedData(null); // ALWAYS CLEAR OLD DATA FIRST to prevent ghosting
 
     const cacheKey = `${item.npsn}_${item.no_bapp}`;
     const currentSessionId = localStorage.getItem("dac_session");
@@ -298,7 +299,6 @@ export default function Home() {
     } else {
       // Miss: Fetch manually
       setDetailLoading(true);
-      setParsedData(null);
 
       try {
         const res = await fetch("/api/get-detail", {
@@ -947,6 +947,42 @@ export default function Home() {
   const rotateImage = (dir: "left" | "right") =>
     setImageRotation((p) => (dir === "right" ? p + 45 : p - 45));
 
+  const handleRefetch = async () => {
+    if (sheetData.length === 0) return;
+    const item = sheetData[currentTaskIndex];
+    if (!item) return;
+
+    // Force fetch, ignoring cache check
+    setDetailLoading(true);
+    const currentSessionId = localStorage.getItem("dac_session");
+
+    try {
+      const res = await fetch("/api/get-detail", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          npsn: item.npsn,
+          session_id: currentSessionId,
+          no_bapp: item.no_bapp,
+        }),
+      });
+      const json = await res.json();
+
+      // Update Cache
+      const cacheKey = `${item.npsn}_${item.no_bapp}`;
+      prefetchCache.current.set(cacheKey, json);
+
+      // Update UI
+      setParsedDataFromJSON(json, item);
+
+    } catch (err) {
+      console.error("Refetch error:", err);
+      alert("Gagal melakukan refetch data.");
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
   if (isLoading)
     return (
       <div className="flex h-screen items-center justify-center dark:text-white">
@@ -1093,9 +1129,18 @@ export default function Home() {
               </div>
               {/* Image Gallery */}
               <div className="bg-white dark:bg-zinc-800 rounded-xl shadow-sm border border-zinc-200 dark:border-zinc-700 p-5">
-                <h2 className="text-lg font-semibold text-zinc-900 dark:text-white mb-4 border-b dark:border-zinc-700 pb-2">
-                  Dokumentasi Pengiriman
-                </h2>
+                <div className="flex justify-between items-center mb-4 border-b dark:border-zinc-700 pb-2">
+                  <h2 className="text-lg font-semibold text-zinc-900 dark:text-white">
+                    Dokumentasi Pengiriman
+                  </h2>
+                  <button
+                    onClick={handleRefetch}
+                    className="px-3 py-1 text-xs font-bold bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-700 dark:hover:bg-zinc-600 rounded text-zinc-700 dark:text-zinc-300 transition-colors"
+                    title="Reload Data & Gambar"
+                  >
+                    ↻ Refetch
+                  </button>
+                </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                   {parsedData.images.map((img, idx) => (
                     <div
