@@ -215,7 +215,10 @@ export default function Home() {
         // Sort by Date (optional) or just use as is
         const filtered = json.data.filter((item: any) => item.type === "Zyrex");
 
-        if (typeof window !== "undefined" && window.location.search.includes("reverse=true")) {
+        if (
+          typeof window !== "undefined" &&
+          window.location.search.includes("reverse=true")
+        ) {
           filtered.reverse();
         }
 
@@ -266,7 +269,7 @@ export default function Home() {
         if (awb.SignatureURL) imageUrls.push(awb.SignatureURL);
 
         // Extract images from extracted HTML if available
-        // Note: parsing HTML here just for images might be expensive, 
+        // Note: parsing HTML here just for images might be expensive,
         // relying mainly on API data for preloading is safer/faster.
 
         console.log(`Prefetching images for ${item.npsn}:`, imageUrls.length);
@@ -333,9 +336,11 @@ export default function Home() {
   const setParsedDataFromJSON = (json: any, item: any) => {
     if (json.success) {
       const { summary, awb, comments, extractedId } = json.data;
-      const fetchedDate = awb.UpdatedAt
-        ? awb.UpdatedAt.substring(0, 10)
-        : new Date().toISOString().split("T")[0];
+      const lastHistory = awb.History.at(-1);
+      const fetchedDate =
+        lastHistory && lastHistory.date
+          ? lastHistory.date.substring(0, 10) // Mengambil "2026-01-07"
+          : new Date().toISOString().split("T")[0];
       setSnBapp(awb.OrderID);
       // Mapping Foto dari ListPhotoJSON
       const photoList = awb.ListPhotoJSON || {};
@@ -768,7 +773,7 @@ export default function Home() {
                 }
               }
             }
-          } catch (ignore) { }
+          } catch (ignore) {}
         }
 
         if (currentDacSession && currentParsedData.extractedId) {
@@ -792,9 +797,7 @@ export default function Home() {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(approvalPayload),
-            }).catch((err) =>
-              console.error("Background DAC Save Error", err),
-            );
+            }).catch((err) => console.error("Background DAC Save Error", err));
           }
         }
       } else {
@@ -1021,7 +1024,6 @@ export default function Home() {
 
       // Update UI
       setParsedDataFromJSON(json, item);
-
     } catch (err) {
       console.error("Refetch error:", err);
       alert("Gagal melakukan refetch data.");
@@ -1070,8 +1072,9 @@ export default function Home() {
     <div className="flex h-screen w-full bg-zinc-50 dark:bg-black overflow-hidden relative">
       {/* Main Content */}
       <div
-        className={`flex-1 h-full overflow-hidden relative bg-zinc-50/50 dark:bg-zinc-900/50 ${sidebarPosition === "left" ? "order-2" : "order-1"
-          }`}
+        className={`flex-1 h-full overflow-hidden relative bg-zinc-50/50 dark:bg-zinc-900/50 ${
+          sidebarPosition === "left" ? "order-2" : "order-1"
+        }`}
       >
         <div className="h-full overflow-y-auto p-4 md:p-6 custom-scrollbar">
           {parsedData && !detailLoading ? (
@@ -1134,22 +1137,24 @@ export default function Home() {
                     {parsedData.history.map((log, idx) => (
                       <div
                         key={idx}
-                        className={`border dark:border-zinc-700 rounded-lg p-4 dark:bg-zinc-900/30 ${log.status.toLowerCase().includes("setuju") ||
+                        className={`border dark:border-zinc-700 rounded-lg p-4 dark:bg-zinc-900/30 ${
+                          log.status.toLowerCase().includes("setuju") ||
                           log.status.toLowerCase().includes("terima")
-                          ? "bg-green-100"
-                          : "bg-red-100"
-                          }`}
+                            ? "bg-green-100"
+                            : "bg-red-100"
+                        }`}
                       >
                         <div className="flex justify-between items-start mb-2">
                           <span className="text-xs text-zinc-500 font-mono">
                             {log.date}
                           </span>
                           <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${log.status.toLowerCase().includes("setuju") ||
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              log.status.toLowerCase().includes("setuju") ||
                               log.status.toLowerCase().includes("terima")
-                              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                              : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                              }`}
+                                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                            }`}
                           >
                             {log.status}
                           </span>
@@ -1227,10 +1232,11 @@ export default function Home() {
 
       {/* Sidebar */}
       <div
-        className={`flex-shrink-0 h-full ${sidebarPosition === "left"
-          ? "order-1 border-r border-zinc-700"
-          : "order-2 border-l border-zinc-700"
-          }`}
+        className={`flex-shrink-0 h-full ${
+          sidebarPosition === "left"
+            ? "order-1 border-r border-zinc-700"
+            : "order-2 border-l border-zinc-700"
+        }`}
       >
         <Sidebar
           pendingCount={sheetData.length - currentTaskIndex}
@@ -1265,8 +1271,9 @@ export default function Home() {
           />
 
           <div
-            className={`absolute top-0 bottom-0 z-50 flex flex-col bg-black/95 backdrop-blur-sm transition-all duration-300 ${sidebarPosition === "left" ? "left-96 right-0" : "left-0 right-96"
-              }`}
+            className={`absolute top-0 bottom-0 z-50 flex flex-col bg-black/95 backdrop-blur-sm transition-all duration-300 ${
+              sidebarPosition === "left" ? "left-96 right-0" : "left-0 right-96"
+            }`}
             onClick={() => setCurrentImageIndex(null)}
           >
             {/* Sticky Info */}
@@ -1331,7 +1338,7 @@ export default function Home() {
                 e.stopPropagation();
                 setCurrentImageIndex(
                   (currentImageIndex - 1 + parsedData.images.length) %
-                  parsedData.images.length,
+                    parsedData.images.length,
                 );
               }}
               className="absolute left-4 top-1/2 -translate-y-1/2 text-white/50 hover:text-white text-6xl transition-colors p-4"
@@ -1366,10 +1373,11 @@ export default function Home() {
                 Edit Catatan Approval DAC
               </h3>
               <span
-                className={`px-2 py-1 rounded text-[10px] font-bold ${pendingApprovalData?.status === 2
-                  ? "bg-green-900 text-green-400"
-                  : "bg-red-900 text-red-400"
-                  }`}
+                className={`px-2 py-1 rounded text-[10px] font-bold ${
+                  pendingApprovalData?.status === 2
+                    ? "bg-green-900 text-green-400"
+                    : "bg-red-900 text-red-400"
+                }`}
               >
                 {pendingApprovalData?.status === 2 ? "APPROVE" : "REJECT"}
               </span>
