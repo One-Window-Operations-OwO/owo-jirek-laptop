@@ -210,13 +210,10 @@ export default function Home() {
       const json = await res.json();
       if (json.success) {
         // Sort by Date (optional) or just use as is
-        const sorted = json.data.sort((a: any, b: any) => {
-          // Assuming newer tasks should be first or last?
-          // Let's keep original order for now unless specified
-          return 0;
-        });
+        const filtered = json.data.filter((item: any) => item.type === "Zyrex");
+        console.log(filtered)
         //setSheetData(sorted.reverse().slice(1, 16)); // Reverse to have oldest first
-        setSheetData(sorted);
+        setSheetData(filtered);
         setCurrentTaskIndex(0);
       } else {
         console.error("Failed to fetch scraped data:", json.message);
