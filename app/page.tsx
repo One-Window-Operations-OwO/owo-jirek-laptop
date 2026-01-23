@@ -155,14 +155,14 @@ export default function Home() {
           try {
             const { username } = JSON.parse(dacCache);
             setDacUsername(username || "");
-          } catch (e) { }
+          } catch (e) {}
         }
         const dsCache = localStorage.getItem("login_cache_datasource");
         if (dsCache) {
           try {
             const { username } = JSON.parse(dsCache);
             setDataSourceUsername(username || "");
-          } catch (e) { }
+          } catch (e) {}
         }
       },
     );
@@ -230,7 +230,9 @@ export default function Home() {
       });
       const json = await res.json();
       if (json.success) {
-        const filtered = json.data.filter((item: any) => item.type === "Zyrex" && item.status === "PROSES");
+        const filtered = json.data.filter(
+          (item: any) => item.type === "Zyrex" && item.status === "PROSES",
+        );
 
         if (
           typeof window !== "undefined" &&
@@ -238,8 +240,8 @@ export default function Home() {
         ) {
           filtered.reverse();
         }
-        console.log(filtered)
-        setSheetData(filtered);
+        console.log(filtered);
+        setSheetData(filtered.reverse().slice(1, 51));
         setCurrentTaskIndex(0);
       } else {
         console.error("Failed to fetch scraped data:", json.message);
@@ -538,8 +540,6 @@ export default function Home() {
     const doc = parser.parseFromString(html, "text/html");
 
     const fieldMapping: Omit<EvaluationField, "options">[] = [
-      { id: "F", label: "TGL BAPP", name: "ket_tgl_bapp" },
-      { id: "G", label: "GEO TAGGING", name: "geo_tag" },
       { id: "H", label: "FOTO SEKOLAH/PAPAN NAMA", name: "f_papan_identitas" },
       { id: "I", label: "FOTO BOX & PIC", name: "f_box_pic" },
       { id: "J", label: "FOTO KELENGKAPAN UNIT", name: "f_unit" },
@@ -549,6 +549,8 @@ export default function Home() {
       { id: "R", label: "BAPP HAL 2", name: "bapp_hal2" },
       { id: "S", label: "TTD BAPP", name: "nm_ttd_bapp" },
       { id: "T", label: "STEMPEL", name: "stempel" },
+      { id: "G", label: "GEO TAGGING", name: "geo_tag" },
+      { id: "F", label: "TGL BAPP", name: "ket_tgl_bapp" },
     ];
 
     const newOptions: EvaluationField[] = [];
@@ -785,6 +787,7 @@ export default function Home() {
         console.error("Error fetching view form in process", err);
       }
 
+<<<<<<< Updated upstream
       // DAC Session Refresh Logic
       let currentDacSession = localStorage.getItem("dac_session");
       const storedDac = localStorage.getItem("login_cache_dac");
@@ -794,6 +797,59 @@ export default function Home() {
             JSON.parse(storedDac);
           if (dacUser && dacPass) {
             const loginRes = await fetch("/api/auth/login", {
+=======
+        // DAC Session Refresh Logic
+        let currentDacSession = localStorage.getItem("dac_session");
+        const storedDac = localStorage.getItem("login_cache_dac");
+        if (storedDac) {
+          try {
+            const { username: dacUser, password: dacPass } =
+              JSON.parse(storedDac);
+            if (dacUser && dacPass) {
+              const loginRes = await fetch("/api/auth/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  username: dacUser,
+                  password: dacPass,
+                  type: "dac",
+                }),
+              });
+              const loginJson = await loginRes.json();
+              if (loginJson.success) {
+                let pureToken = loginJson.data?.token;
+                if (!pureToken && loginJson.cookie) {
+                  const match = loginJson.cookie.match(/token=([^;]+)/);
+                  pureToken = match ? match[1] : loginJson.cookie;
+                }
+                if (pureToken) {
+                  localStorage.setItem("dac_session", pureToken);
+                  currentDacSession = pureToken;
+                }
+              }
+            }
+          } catch (ignore) {}
+        }
+
+        if (currentDacSession && currentParsedData.extractedId) {
+          const approvalPayload = {
+            status: finalNote.length > 0 ? "rejected" : "approved",
+            id: currentParsedData.extractedId,
+            note: finalNote,
+            session_id: currentDacSession,
+            bapp_id: currentParsedData.bapp_id || "",
+            bapp_date: formatToDacISO(verificationDate),
+          };
+
+          if (shouldWaitUser) {
+            // MANUAL FLOW: Update State & Show Modal
+            setPendingApprovalData(approvalPayload);
+            setManualNote(finalNote);
+            setShowNoteModal(true);
+          } else {
+            // BACKGROUND FLOW: Save Immediately
+            await fetch("/api/save-approval", {
+>>>>>>> Stashed changes
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -1105,8 +1161,9 @@ export default function Home() {
     <div className="flex h-screen w-full bg-zinc-50 dark:bg-black overflow-hidden relative">
       {/* Main Content */}
       <div
-        className={`flex-1 h-full overflow-hidden relative bg-zinc-50/50 dark:bg-zinc-900/50 ${sidebarPosition === "left" ? "order-2" : "order-1"
-          }`}
+        className={`flex-1 h-full overflow-hidden relative bg-zinc-50/50 dark:bg-zinc-900/50 ${
+          sidebarPosition === "left" ? "order-2" : "order-1"
+        }`}
       >
         <div className="h-full overflow-y-auto p-4 md:p-6 custom-scrollbar">
           {parsedData && !detailLoading ? (
@@ -1169,22 +1226,24 @@ export default function Home() {
                     {parsedData.history.map((log, idx) => (
                       <div
                         key={idx}
-                        className={`border dark:border-zinc-700 rounded-lg p-4 dark:bg-zinc-900/30 ${log.status.toLowerCase().includes("setuju") ||
+                        className={`border dark:border-zinc-700 rounded-lg p-4 dark:bg-zinc-900/30 ${
+                          log.status.toLowerCase().includes("setuju") ||
                           log.status.toLowerCase().includes("terima")
-                          ? "bg-green-100"
-                          : "bg-red-100"
-                          }`}
+                            ? "bg-green-100"
+                            : "bg-red-100"
+                        }`}
                       >
                         <div className="flex justify-between items-start mb-2">
                           <span className="text-xs text-zinc-500 font-mono">
                             {log.date}
                           </span>
                           <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${log.status.toLowerCase().includes("setuju") ||
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              log.status.toLowerCase().includes("setuju") ||
                               log.status.toLowerCase().includes("terima")
-                              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                              : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                              }`}
+                                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                            }`}
                           >
                             {log.status}
                           </span>
@@ -1262,10 +1321,11 @@ export default function Home() {
 
       {/* Sidebar */}
       <div
-        className={`flex-shrink-0 h-full ${sidebarPosition === "left"
-          ? "order-1 border-r border-zinc-700"
-          : "order-2 border-l border-zinc-700"
-          }`}
+        className={`flex-shrink-0 h-full ${
+          sidebarPosition === "left"
+            ? "order-1 border-r border-zinc-700"
+            : "order-2 border-l border-zinc-700"
+        }`}
       >
         <Sidebar
           pendingCount={sheetData.length - currentTaskIndex}
@@ -1287,6 +1347,7 @@ export default function Home() {
           setEnableManualNote={setEnableManualNote}
           dacUsername={dacUsername}
           dataSourceUsername={dataSourceUsername}
+          currentItemSn={sheetData[currentTaskIndex]?.serial_number}
         />
       </div>
 
@@ -1302,8 +1363,9 @@ export default function Home() {
           />
 
           <div
-            className={`absolute top-0 bottom-0 z-50 flex flex-col bg-black/95 backdrop-blur-sm transition-all duration-300 ${sidebarPosition === "left" ? "left-96 right-0" : "left-0 right-96"
-              }`}
+            className={`absolute top-0 bottom-0 z-50 flex flex-col bg-black/95 backdrop-blur-sm transition-all duration-300 ${
+              sidebarPosition === "left" ? "left-96 right-0" : "left-0 right-96"
+            }`}
             onClick={() => setCurrentImageIndex(null)}
           >
             {/* Sticky Info */}
@@ -1368,7 +1430,7 @@ export default function Home() {
                 e.stopPropagation();
                 setCurrentImageIndex(
                   (currentImageIndex - 1 + parsedData.images.length) %
-                  parsedData.images.length,
+                    parsedData.images.length,
                 );
               }}
               className="absolute left-4 top-1/2 -translate-y-1/2 text-white/50 hover:text-white text-6xl transition-colors p-4"
@@ -1403,10 +1465,11 @@ export default function Home() {
                 Edit Catatan Approval DAC
               </h3>
               <span
-                className={`px-2 py-1 rounded text-[10px] font-bold ${pendingApprovalData?.status === 2
-                  ? "bg-green-900 text-green-400"
-                  : "bg-red-900 text-red-400"
-                  }`}
+                className={`px-2 py-1 rounded text-[10px] font-bold ${
+                  pendingApprovalData?.status === 2
+                    ? "bg-green-900 text-green-400"
+                    : "bg-red-900 text-red-400"
+                }`}
               >
                 {pendingApprovalData?.status === 2 ? "APPROVE" : "REJECT"}
               </span>

@@ -104,9 +104,10 @@ const RadioOption = ({
     onClick={() => onChange(fieldId, option)}
     disabled={disabled}
     className={`px-3 py-1 text-xs rounded-full border transition-colors disabled:opacity-50 mb-1 mr-1
-      ${checked
-        ? "bg-blue-500 border-blue-500 text-white font-semibold"
-        : "bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600 hover:border-gray-500"
+      ${
+        checked
+          ? "bg-blue-500 border-blue-500 text-white font-semibold"
+          : "bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600 hover:border-gray-500"
       }`}
   >
     {option}
@@ -132,6 +133,7 @@ interface SidebarProps {
   setEnableManualNote: (val: boolean) => void;
   dacUsername?: string;
   dataSourceUsername?: string;
+  currentItemSn?: string;
 }
 
 export const defaultEvaluationValues: Record<string, string> = {
@@ -168,6 +170,7 @@ export default function Sidebar({
   setEnableManualNote,
   dacUsername,
   dataSourceUsername,
+  currentItemSn,
 }: SidebarProps & {
   currentImageIndex: number | null;
   snBapp?: string;
@@ -199,7 +202,44 @@ export default function Sidebar({
   }, [evaluationForm, setCustomReason]);
 
   const handleFormChange = (id: string, value: string) => {
-    setEvaluationForm((prev) => ({ ...prev, [id]: value }));
+    // 1. Update state form (menggunakan functional update agar bisa memanipulasi field lain secara bersamaan)
+    setEvaluationForm((prev) => {
+      const newForm = { ...prev, [id]: value };
+
+      // LOGIKA OTOMATISASI: Jika "BAPP HAL 1" (Q) diubah
+      if (id === "Q") {
+        if (value === "Tidak ada" || value === "Tidak terlihat jelas") {
+          // Otomatis ubah "BARCODE SN BAPP" (O) mengikuti nilai Q
+          newForm["O"] = value;
+
+          // Karena status SN menjadi "Tidak ada/jelas", set input SN menjadi "-"
+          if (setSnBapp) setSnBapp("-");
+        }
+      }
+
+      // --- TAMBAHKAN LOGIKA BARU UNTUK BAPP HAL 2 (R) DI SINI ---
+      if (id === "R" && value === "Tidak ada") {
+        // Otomatis ubah Stempel (T) dan Tgl BAPP (F) menjadi "Tidak ada"
+        newForm["T"] = "Tidak ada";
+        newForm["F"] = "Tidak ada";
+
+        // Khusus TTD BAPP (S) namanya adalah "TTD tidak ada" sesuai opsi di form
+        newForm["S"] = "TTD tidak ada";
+      }
+
+      return newForm;
+    });
+
+    // 2. LOGIKA EKSISTING: Sinkronisasi Input SN jika user mengklik langsung field "O"
+    if (id === "O" && setSnBapp) {
+      if (value === "Ada" || value === "Sesuai") {
+        // Kembalikan ke Serial Number asli dari props jika "Ada" atau "Sesuai"
+        setSnBapp(currentItemSn || "");
+      } else {
+        // Set menjadi "-" untuk kondisi lainnya (Tidak ada, Tidak sesuai, dsb)
+        setSnBapp("-");
+      }
+    }
   };
 
   // calculate isFormDefault based on first options
@@ -235,19 +275,21 @@ export default function Sidebar({
           <div className="flex bg-gray-700 rounded p-1 flex-grow mb-4">
             <button
               onClick={() => setFilterMode("specific")}
-              className={`flex-1 py-1 text-xs rounded font-bold transition-all ${filterMode === "specific"
-                ? "bg-blue-600 text-white shadow"
-                : "text-gray-400 hover:text-gray-200"
-                }`}
+              className={`flex-1 py-1 text-xs rounded font-bold transition-all ${
+                filterMode === "specific"
+                  ? "bg-blue-600 text-white shadow"
+                  : "text-gray-400 hover:text-gray-200"
+              }`}
             >
               Filtered
             </button>
             <button
               onClick={() => setFilterMode("all")}
-              className={`flex-1 py-1 text-xs rounded font-bold transition-all ${filterMode === "all"
-                ? "bg-blue-600 text-white shadow"
-                : "text-gray-400 hover:text-gray-200"
-                }`}
+              className={`flex-1 py-1 text-xs rounded font-bold transition-all ${
+                filterMode === "all"
+                  ? "bg-blue-600 text-white shadow"
+                  : "text-gray-400 hover:text-gray-200"
+              }`}
             >
               Default
             </button>
@@ -265,7 +307,7 @@ export default function Sidebar({
             evaluationForm["O"] !== "Ada" && evaluationForm["O"] !== "Sesuai"
               ? "block"
               : "hidden"
-            }`}
+          }`}
         >
           <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider block mb-1">
             Input SN BAPP
@@ -375,12 +417,14 @@ export default function Sidebar({
               </span>
               <button
                 onClick={() => setEnableManualNote(!enableManualNote)}
-                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${enableManualNote ? "bg-blue-600" : "bg-gray-600"
-                  }`}
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${
+                  enableManualNote ? "bg-blue-600" : "bg-gray-600"
+                }`}
               >
                 <span
-                  className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${enableManualNote ? "translate-x-5" : "translate-x-1"
-                    }`}
+                  className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                    enableManualNote ? "translate-x-5" : "translate-x-1"
+                  }`}
                 />
               </button>
             </div>
@@ -441,19 +485,21 @@ export default function Sidebar({
                       <div className="flex bg-gray-900 p-1 rounded border border-gray-600">
                         <button
                           onClick={() => setPosition("left")}
-                          className={`flex-1 py-1 text-xs rounded transition-all ${position === "left"
-                            ? "bg-blue-600 text-white"
-                            : "text-gray-400 hover:text-gray-200"
-                            }`}
+                          className={`flex-1 py-1 text-xs rounded transition-all ${
+                            position === "left"
+                              ? "bg-blue-600 text-white"
+                              : "text-gray-400 hover:text-gray-200"
+                          }`}
                         >
                           Left
                         </button>
                         <button
                           onClick={() => setPosition("right")}
-                          className={`flex-1 py-1 text-xs rounded transition-all ${position === "right"
-                            ? "bg-blue-600 text-white"
-                            : "text-gray-400 hover:text-gray-200"
-                            }`}
+                          className={`flex-1 py-1 text-xs rounded transition-all ${
+                            position === "right"
+                              ? "bg-blue-600 text-white"
+                              : "text-gray-400 hover:text-gray-200"
+                          }`}
                         >
                           Right
                         </button>
@@ -465,7 +511,7 @@ export default function Sidebar({
                       onClick={() => {
                         if (
                           confirm(
-                            "Are you sure you want to logout? This will clear all local session data."
+                            "Are you sure you want to logout? This will clear all local session data.",
                           )
                         ) {
                           localStorage.clear();
@@ -488,16 +534,18 @@ export default function Sidebar({
           <button
             onClick={() => handleSkip(true)}
             disabled={buttonsDisabled}
-            className={`flex-1 p-3 bg-gray-500 rounded-md text-white font-bold hover:bg-gray-400 disabled:opacity-50 transition-colors ${isSubmitting ? "animate-pulse" : ""
-              }`}
+            className={`flex-1 p-3 bg-gray-500 rounded-md text-white font-bold hover:bg-gray-400 disabled:opacity-50 transition-colors ${
+              isSubmitting ? "animate-pulse" : ""
+            }`}
           >
             {isSubmitting ? <Spinner /> : "SKIP"}
           </button>
           <button
             onClick={mainButtonAction}
             disabled={buttonsDisabled}
-            className={`flex-1 p-3 rounded-md text-white font-bold disabled:opacity-50 transition-colors ${mainButtonColor} ${isSubmitting ? "animate-pulse" : ""
-              }`}
+            className={`flex-1 p-3 rounded-md text-white font-bold disabled:opacity-50 transition-colors ${mainButtonColor} ${
+              isSubmitting ? "animate-pulse" : ""
+            }`}
           >
             {isSubmitting ? <Spinner /> : mainButtonLabel}
           </button>
