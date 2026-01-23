@@ -61,6 +61,9 @@ export default function Home() {
   const [enableManualNote, setEnableManualNote] = useState(false); // Default OFF
   const [pendingApprovalData, setPendingApprovalData] = useState<any>(null);
 
+  const [dacUsername, setDacUsername] = useState("");
+  const [dataSourceUsername, setDataSourceUsername] = useState("");
+
   useEffect(() => {
     const storedPos = localStorage.getItem("sidebar_layout");
     if (storedPos === "left" || storedPos === "right") {
@@ -146,6 +149,21 @@ export default function Home() {
     Promise.all([refreshSession("dac"), refreshSession("datasource")]).finally(
       () => {
         setIsLoading(false);
+        // Load Usernames
+        const dacCache = localStorage.getItem("login_cache_dac");
+        if (dacCache) {
+          try {
+            const { username } = JSON.parse(dacCache);
+            setDacUsername(username || "");
+          } catch (e) { }
+        }
+        const dsCache = localStorage.getItem("login_cache_datasource");
+        if (dsCache) {
+          try {
+            const { username } = JSON.parse(dsCache);
+            setDataSourceUsername(username || "");
+          } catch (e) { }
+        }
       },
     );
   }, []);
@@ -1253,6 +1271,8 @@ export default function Home() {
           setPosition={handleSetSidebarPosition}
           enableManualNote={enableManualNote}
           setEnableManualNote={setEnableManualNote}
+          dacUsername={dacUsername}
+          dataSourceUsername={dataSourceUsername}
         />
       </div>
 
