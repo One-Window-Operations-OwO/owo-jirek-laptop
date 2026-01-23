@@ -700,134 +700,150 @@ export default function Home() {
     currentParsedData: ExtractedData,
     shouldWaitUser: boolean,
   ) => {
-    try {
-      const res = await fetch("/api/datasource/submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payload, cookie: session }),
-      });
+    let attempt = 0;
+    while (true) {
+      attempt++;
+      try {
+        const res = await fetch("/api/datasource/submit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ payload, cookie: session }),
+        });
 
-      const json = await res.json();
-      if (json.success) {
-        if (shouldWaitUser) {
-          console.log(`Submitted ${item.npsn} (Manual Note Flow)`);
+        const json = await res.json();
+        if (json.success) {
+          if (shouldWaitUser) {
+            console.log(`Submitted ${item.npsn} (Manual Note Flow)`);
+          } else {
+            console.log(`Submitted ${item.npsn} (Background)`);
+          }
+          // Break loop on success
+          break;
         } else {
-          console.log(`Submitted ${item.npsn} (Background)`);
+          // Failure response from server
+          console.error(`Submit Failed (Attempt ${attempt}):`, json.message);
+          if (shouldWaitUser) {
+            // Optional: notify user it's retrying? For now, we just retry silently or log.
+            console.log("Retrying in 2 seconds...");
+          }
+          // Delay before retry
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          continue;
         }
+      } catch (e) {
+        console.error(`Submit Process Error (Attempt ${attempt}):`, e);
+        // Delay before retry
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        continue;
+      }
+    }
 
-        let finalNote = "";
+    // Process Post-Success Logic (extracted from original success block)
+    try {
+      let finalNote = "";
 
-        // Only fetch view-form if needed (e.g. for rejected items or logging)
-        try {
-          const viewRes = await fetch("/api/datasource/view-form", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              id: item.action_id,
-              cookie: session,
-            }),
-          });
-          const viewJson = await viewRes.json();
-          if (viewJson.success && viewJson.html) {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(viewJson.html, "text/html");
+      // Only fetch view-form if needed (e.g. for rejected items or logging)
+      try {
+        const viewRes = await fetch("/api/datasource/view-form", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: item.action_id,
+            cookie: session,
+          }),
+        });
+        const viewJson = await viewRes.json();
+        if (viewJson.success && viewJson.html) {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(viewJson.html, "text/html");
 
-            const descInput = doc.querySelector(
-              'textarea[name="description"]',
-            ) as HTMLTextAreaElement;
-            if (descInput) {
-              finalNote = descInput.value || descInput.textContent || "";
-            }
+          const descInput = doc.querySelector(
+            'textarea[name="description"]',
+          ) as HTMLTextAreaElement;
+          if (descInput) {
+            finalNote = descInput.value || descInput.textContent || "";
+          }
 
-            const alerts = Array.from(
-              doc.querySelectorAll(".alert.alert-danger"),
-            );
-            const isPihakPertamaError = alerts.some((alert) =>
-              /Pihak pertama/i.test(alert.textContent || ""),
-            );
+          const alerts = Array.from(
+            doc.querySelectorAll(".alert.alert-danger"),
+          );
+          const isPihakPertamaError = alerts.some((alert) =>
+            /Pihak pertama/i.test(alert.textContent || ""),
+          );
 
-            if (isPihakPertamaError) {
-              const pihakPertamaNote =
-                "(1AN) Pihak pertama hanya boleh dari kepala sekolah/wakil kepala sekolah/guru/pengajar/operator sekolah";
-              if (finalNote.length > 0) {
-                finalNote = `${finalNote} ${pihakPertamaNote}`;
-              } else {
-                finalNote = pihakPertamaNote;
-              }
+          if (isPihakPertamaError) {
+            const pihakPertamaNote =
+              "(1AN) Pihak pertama hanya boleh dari kepala sekolah/wakil kepala sekolah/guru/pengajar/operator sekolah";
+            if (finalNote.length > 0) {
+              finalNote = `${finalNote} ${pihakPertamaNote}`;
+            } else {
+              finalNote = pihakPertamaNote;
             }
           }
-        } catch (err) {
-          console.error("Error fetching view form in process", err);
         }
+      } catch (err) {
+        console.error("Error fetching view form in process", err);
+      }
 
-        // DAC Session Refresh Logic
-        let currentDacSession = localStorage.getItem("dac_session");
-        const storedDac = localStorage.getItem("login_cache_dac");
-        if (storedDac) {
-          try {
-            const { username: dacUser, password: dacPass } =
-              JSON.parse(storedDac);
-            if (dacUser && dacPass) {
-              const loginRes = await fetch("/api/auth/login", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  username: dacUser,
-                  password: dacPass,
-                  type: "dac",
-                }),
-              });
-              const loginJson = await loginRes.json();
-              if (loginJson.success) {
-                let pureToken = loginJson.data?.token;
-                if (!pureToken && loginJson.cookie) {
-                  const match = loginJson.cookie.match(/token=([^;]+)/);
-                  pureToken = match ? match[1] : loginJson.cookie;
-                }
-                if (pureToken) {
-                  localStorage.setItem("dac_session", pureToken);
-                  currentDacSession = pureToken;
-                }
-              }
-            }
-          } catch (ignore) { }
-        }
-
-        if (currentDacSession && currentParsedData.extractedId) {
-          const approvalPayload = {
-            status: finalNote.length > 0 ? "rejected" : "approved",
-            id: currentParsedData.extractedId,
-            note: finalNote,
-            session_id: currentDacSession,
-            bapp_id: currentParsedData.bapp_id || "",
-            bapp_date: formatToDacISO(verificationDate),
-          };
-
-          if (shouldWaitUser) {
-            // MANUAL FLOW: Update State & Show Modal
-            setPendingApprovalData(approvalPayload);
-            setManualNote(finalNote);
-            setShowNoteModal(true);
-          } else {
-            // BACKGROUND FLOW: Save Immediately
-            await fetch("/api/save-approval", {
+      // DAC Session Refresh Logic
+      let currentDacSession = localStorage.getItem("dac_session");
+      const storedDac = localStorage.getItem("login_cache_dac");
+      if (storedDac) {
+        try {
+          const { username: dacUser, password: dacPass } =
+            JSON.parse(storedDac);
+          if (dacUser && dacPass) {
+            const loginRes = await fetch("/api/auth/login", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(approvalPayload),
-            }).catch((err) => console.error("Background DAC Save Error", err));
+              body: JSON.stringify({
+                username: dacUser,
+                password: dacPass,
+                type: "dac",
+              }),
+            });
+            const loginJson = await loginRes.json();
+            if (loginJson.success) {
+              let pureToken = loginJson.data?.token;
+              if (!pureToken && loginJson.cookie) {
+                const match = loginJson.cookie.match(/token=([^;]+)/);
+                pureToken = match ? match[1] : loginJson.cookie;
+              }
+              if (pureToken) {
+                localStorage.setItem("dac_session", pureToken);
+                currentDacSession = pureToken;
+              }
+            }
           }
-        }
-      } else {
-        console.error("Submit Failed", json.message);
+        } catch (ignore) { }
+      }
+
+      if (currentDacSession && currentParsedData.extractedId) {
+        const approvalPayload = {
+          status: finalNote.length > 0 ? "rejected" : "approved",
+          id: currentParsedData.extractedId,
+          note: finalNote,
+          session_id: currentDacSession,
+          bapp_id: currentParsedData.bapp_id || "",
+          bapp_date: formatToDacISO(verificationDate),
+        };
+
         if (shouldWaitUser) {
-          alert(`Gagal submit: ${json.message}`);
+          // MANUAL FLOW: Update State & Show Modal
+          setPendingApprovalData(approvalPayload);
+          setManualNote(finalNote);
+          setShowNoteModal(true);
+        } else {
+          // BACKGROUND FLOW: Save Immediately
+          await fetch("/api/save-approval", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(approvalPayload),
+          }).catch((err) => console.error("Background DAC Save Error", err));
         }
       }
-    } catch (e) {
-      console.error("Submit Process Error", e);
-      if (shouldWaitUser) {
-        alert("Terjadi kesalahan saat submit.");
-      }
+    } catch (err) {
+      console.error("Error in post-submit logic:", err);
     }
   };
   const executeSaveApproval = async (payload: any) => {
