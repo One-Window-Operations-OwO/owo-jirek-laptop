@@ -232,7 +232,7 @@ export default function Sidebar({
 
     // 2. LOGIKA EKSISTING: Sinkronisasi Input SN jika user mengklik langsung field "O"
     if (id === "O" && setSnBapp) {
-      if (value === "Ada" || value === "Sesuai") {
+      if (value === "Ada" || value === "Tidak sesuai") {
         // Kembalikan ke Serial Number asli dari props jika "Ada" atau "Sesuai"
         setSnBapp(currentItemSn || "");
       } else {
