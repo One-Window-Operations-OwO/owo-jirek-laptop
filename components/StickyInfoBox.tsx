@@ -22,6 +22,71 @@ export default function StickyInfoBox({
     "sticky-info-box",
   );
 
+  // PTK Search State
+  const [kepsek, setKepsek] = useState<string | null>(null);
+  const [guruList, setGuruList] = useState<any[]>([]);
+  const [isLoadingGuru, setIsLoadingGuru] = useState(false);
+  const [guruSearch, setGuruSearch] = useState("");
+
+  useEffect(() => {
+    if (schoolData.npsn && schoolData.npsn !== "-") {
+      setIsLoadingGuru(true);
+      fetch(`/api/fetch-school-data?npsn=${schoolData.npsn}`, {
+        method: "POST",
+      })
+        .then((res) => {
+          if (!res.ok) throw new Error(res.statusText);
+          return res.json();
+        })
+        .then((data) => {
+          if (data) {
+            setKepsek(data.namaKepsek || "-");
+            let list = data.guruLain || [];
+            if (data.namaKepsek) {
+              list = [
+                { nama: data.namaKepsek, jabatan: "Kepala Sekolah" },
+                ...list,
+              ];
+            }
+            setGuruList(list);
+          }
+        })
+        .catch((err) => console.error("Error fetching guru:", err))
+        .finally(() => setIsLoadingGuru(false));
+    } else {
+      setGuruList([]);
+      setKepsek(null);
+    }
+  }, [schoolData.npsn]);
+
+  const filteredGuru = useMemo(() => {
+    const pattern = guruSearch.trim().toLowerCase();
+    if (!pattern) return guruList;
+    if (pattern.length <= 1) return [];
+    return guruList
+      .filter(
+        (g) =>
+          (g.nama || "").toLowerCase().includes(pattern) ||
+          (g.jabatan || "").toLowerCase().includes(pattern)
+      )
+      .slice(0, 5);
+  }, [guruList, guruSearch]);
+
+  const renderGuruItem = (g: any, idx: number) => {
+    return (
+      <div
+        key={idx}
+        className="block text-[13px] leading-[1.5] px-3 py-2 text-zinc-300 border-b border-zinc-800 cursor-pointer bg-zinc-900 hover:bg-zinc-800 transition-colors whitespace-nowrap overflow-hidden text-ellipsis"
+      >
+        <b className="text-zinc-200">{g.nama}</b>
+        <br />
+        <span className="text-zinc-500 text-[11px] font-medium">
+          {g.jabatan}
+        </span>
+      </div>
+    );
+  };
+
   return (
     <div
       ref={boxRef}
@@ -34,16 +99,16 @@ export default function StickyInfoBox({
         width: "320px",
         borderRadius: "8px",
         fontFamily: "sans-serif",
-        boxShadow: "0 4px 12px rgba(0,0,0,0.5)", // Darker shadow
-        backgroundColor: "#18181b", // zinc-900
-        border: "2px solid #3f3f46", // zinc-700
+        boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
+        backgroundColor: "#18181b",
+        border: "2px solid #3f3f46",
       }}
       className="text-zinc-100 flex flex-col max-h-[80vh]"
     >
       {/* Header */}
       <div
         onMouseDown={handleMouseDown}
-        onTouchStart={handleMouseDown} // Support touch start
+        onTouchStart={handleMouseDown}
         onClick={(e) => e.stopPropagation()}
         style={{
           display: "flex",
@@ -51,8 +116,8 @@ export default function StickyInfoBox({
           alignItems: "center",
           padding: "8px 18px",
           cursor: "move",
-          borderBottom: "1px solid #3f3f46", // zinc-700
-          backgroundColor: "#27272a", // zinc-800
+          borderBottom: "1px solid #3f3f46",
+          backgroundColor: "#27272a",
           borderTopLeftRadius: "6px",
           borderTopRightRadius: "6px",
           flexShrink: 0,
@@ -94,6 +159,37 @@ export default function StickyInfoBox({
           </div>
         </div>
 
+        {/* --- PTK / GURU SECTION --- */}
+        <hr className="border-zinc-700" />
+
+        <div className="p-0">
+          <div className="text-[11px] font-extrabold text-zinc-500 uppercase tracking-wide mb-2">
+            Kepala Sekolah :
+          </div>
+          <div className="mb-3 text-[13px] font-semibold text-zinc-200 bg-sky-900/20 border border-sky-900/50 p-2 rounded block">
+            {isLoadingGuru ? "Loading..." : kepsek || "-"}
+          </div>
+
+          <input
+            className="w-full bg-zinc-900 border border-zinc-600 rounded px-2 py-1 mb-2 text-white focus:outline-none focus:border-yellow-500 text-[13px]"
+            placeholder="Cari guru..."
+            autoComplete="off"
+            value={guruSearch}
+            onChange={(e) => setGuruSearch(e.target.value)}
+          />
+
+          <div className="max-h-[120px] overflow-y-auto border border-zinc-700 bg-zinc-900 rounded p-1 custom-scrollbar">
+            {filteredGuru.length > 0 ? (
+              filteredGuru.map((g, idx) => renderGuruItem(g, idx))
+            ) : (
+              <div className="text-zinc-500 text-xs p-2 text-center">
+                Tidak ada data ditampilkan.
+              </div>
+            )}
+          </div>
+        </div>
+        {/* ------------------------- */}
+
         <hr className="border-zinc-700" />
 
         {/* Date Input */}
@@ -112,7 +208,10 @@ export default function StickyInfoBox({
                 const daysToAdd = e.deltaY > 0 ? -1 : 1;
                 currentDate.setDate(currentDate.getDate() + daysToAdd);
                 const year = currentDate.getFullYear();
-                const month = String(currentDate.getMonth() + 1).padStart(2, "0");
+                const month = String(currentDate.getMonth() + 1).padStart(
+                  2,
+                  "0",
+                );
                 const day = String(currentDate.getDate()).padStart(2, "0");
                 setDate(`${year}-${month}-${day}`);
               }}
@@ -136,22 +235,24 @@ export default function StickyInfoBox({
               {history.map((log: any, idx: number) => (
                 <div
                   key={idx}
-                  className={`border border-zinc-700 rounded p-2 ${log.status.toLowerCase().includes("setuju") ||
+                  className={`border border-zinc-700 rounded p-2 ${
+                    log.status.toLowerCase().includes("setuju") ||
                     log.status.toLowerCase().includes("terima")
-                    ? "bg-green-900/20 border-green-900/50"
-                    : "bg-red-900/20 border-red-900/50"
-                    }`}
+                      ? "bg-green-900/20 border-green-900/50"
+                      : "bg-red-900/20 border-red-900/50"
+                  }`}
                 >
                   <div className="flex justify-between items-start mb-1">
                     <span className="text-[10px] text-zinc-500 font-mono">
                       {log.date}
                     </span>
                     <span
-                      className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${log.status.toLowerCase().includes("setuju") ||
+                      className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
+                        log.status.toLowerCase().includes("setuju") ||
                         log.status.toLowerCase().includes("terima")
-                        ? "bg-green-900/50 text-green-400"
-                        : "bg-red-900/50 text-red-400"
-                        }`}
+                          ? "bg-green-900/50 text-green-400"
+                          : "bg-red-900/50 text-red-400"
+                      }`}
                     >
                       {log.status}
                     </span>
