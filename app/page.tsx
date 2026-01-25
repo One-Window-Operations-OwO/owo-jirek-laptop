@@ -8,6 +8,7 @@ import Sidebar, {
 } from "@/components/Sidebar";
 import StickyInfoBox from "@/components/StickyInfoBox";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
+import ProcessStatusLight from "@/components/ProcessStatusLight";
 
 interface ApprovalLog {
   date: string;
@@ -63,6 +64,21 @@ export default function Home() {
 
   const [dacUsername, setDacUsername] = useState("");
   const [dataSourceUsername, setDataSourceUsername] = useState("");
+
+  // Status Light & Retry State
+  const [processingStatus, setProcessingStatus] = useState<
+    "idle" | "processing" | "success" | "error"
+  >("idle");
+  const [failedStage, setFailedStage] = useState<
+    "none" | "submit" | "save-approval"
+  >("none");
+  const [retryPayloads, setRetryPayloads] = useState<{
+    submitPayload?: any;
+    approvalPayload?: any;
+    item?: any;
+    currentParsedData?: ExtractedData;
+  }>({});
+  const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
     const storedPos = localStorage.getItem("sidebar_layout");
@@ -155,14 +171,14 @@ export default function Home() {
           try {
             const { username } = JSON.parse(dacCache);
             setDacUsername(username || "");
-          } catch (e) {}
+          } catch (e) { }
         }
         const dsCache = localStorage.getItem("login_cache_datasource");
         if (dsCache) {
           try {
             const { username } = JSON.parse(dsCache);
             setDataSourceUsername(username || "");
-          } catch (e) {}
+          } catch (e) { }
         }
       },
     );
@@ -701,44 +717,83 @@ export default function Home() {
     item: any,
     currentParsedData: ExtractedData,
     shouldWaitUser: boolean,
+    isRetry: boolean = false
   ) => {
-    let attempt = 0;
-    while (true) {
-      attempt++;
-      try {
-        const res = await fetch("/api/datasource/submit", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ payload, cookie: session }),
-        });
+    // Reset Status on start (unless it's a specific retry stage that we handle inside, but generally reset to processing)
+    if (!isRetry) {
+      setProcessingStatus("processing");
+      setFailedStage("none");
+      setErrorMessage("");
+      // Save payloads for potential retry
+      setRetryPayloads({
+        submitPayload: payload,
+        item: item,
+        currentParsedData: currentParsedData,
+      });
+    } else {
+      setProcessingStatus("processing");
+      setErrorMessage("");
+    }
 
-        const json = await res.json();
-        if (json.success) {
-          if (shouldWaitUser) {
-            console.log(`Submitted ${item.npsn} (Manual Note Flow)`);
+    let attempt = 0;
+    let submitSuccess = false;
+
+    // Only run submit loop if we are NOT retrying JUST the save-approval stage
+    // If failedStage was 'save-approval' and we are retrying, we skip submit
+    const skipSubmit = isRetry && failedStage === 'save-approval';
+
+    if (!skipSubmit) {
+      while (true) {
+        attempt++;
+        // Max retries for background process? Let's keep it finite for the red light to appear.
+        // Or user said "Background process still running" -> Yellow. "Error" -> Red.
+        // If we loop forever, it stays Yellow. If it fails definitively, Red.
+        // Let's cap at 3 attempts for "Red" state trigger, or match existing logic.
+        // Existing logic is `while(true)`. That means it never errors out to Red?
+        // The user said "Merah berarti ada yang error".
+        // So we should probably limit retries or allow the user to interrupt.
+        // For now, I'll limit to 3 attempts, then go Red.
+        if (attempt > 3) {
+          console.error("Max retries reached for submit");
+          setProcessingStatus("error");
+          setFailedStage("submit");
+          setErrorMessage("Gagal submit ke datasource setelah 3 percobaan");
+          return; // Stop here
+        }
+
+        try {
+          const res = await fetch("/api/datasource/submit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ payload, cookie: session }),
+          });
+
+          const json = await res.json();
+          if (json.success) {
+            if (shouldWaitUser) {
+              console.log(`Submitted ${item.npsn} (Manual Note Flow)`);
+            } else {
+              console.log(`Submitted ${item.npsn} (Background)`);
+            }
+            submitSuccess = true;
+            break;
           } else {
-            console.log(`Submitted ${item.npsn} (Background)`);
+            // Failure response from server
+            console.error(`Submit Failed (Attempt ${attempt}):`, json.message);
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            continue;
           }
-          // Break loop on success
-          break;
-        } else {
-          // Failure response from server
-          console.error(`Submit Failed (Attempt ${attempt}):`, json.message);
-          if (shouldWaitUser) {
-            // Optional: notify user it's retrying? For now, we just retry silently or log.
-            console.log("Retrying in 2 seconds...");
-          }
-          // Delay before retry
+        } catch (e) {
+          console.error(`Submit Process Error (Attempt ${attempt}):`, e);
           await new Promise((resolve) => setTimeout(resolve, 2000));
           continue;
         }
-      } catch (e) {
-        console.error(`Submit Process Error (Attempt ${attempt}):`, e);
-        // Delay before retry
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        continue;
       }
+    } else {
+      submitSuccess = true; // Skipped submit because it was already done
     }
+
+    if (!submitSuccess) return; // Should be handled by max retries check above
 
     // Process Post-Success Logic (extracted from original success block)
     try {
@@ -817,7 +872,7 @@ export default function Home() {
               }
             }
           }
-        } catch (ignore) {}
+        } catch (ignore) { }
       }
 
       if (currentDacSession && currentParsedData.extractedId) {
@@ -830,22 +885,62 @@ export default function Home() {
           bapp_date: formatToDacISO(verificationDate),
         };
 
+        // Update retry payload for approval
+        setRetryPayloads(prev => ({ ...prev, approvalPayload }));
+
         if (shouldWaitUser) {
           // MANUAL FLOW: Update State & Show Modal
           setPendingApprovalData(approvalPayload);
           setManualNote(finalNote);
           setShowNoteModal(true);
+          // Note: State remains 'processing' or maybe 'idle' waiting for user?
+          // Let's set to success for the "Submit" part, but effectively it's paused.
+          // Since this is a modal flow, the "Process" is effectively interrupted/done for now.
+          setProcessingStatus("idle");
         } else {
           // BACKGROUND FLOW: Save Immediately
-          await fetch("/api/save-approval", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(approvalPayload),
-          }).catch((err) => console.error("Background DAC Save Error", err));
+          try {
+            // Retry loop for Save Approval ?
+            let saveAttempt = 0;
+            while (true) {
+              saveAttempt++;
+              if (saveAttempt > 3) {
+                throw new Error("Max retries for Save Approval");
+              }
+              const saveRes = await fetch("/api/save-approval", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(approvalPayload),
+              });
+
+              // Check if response is ok or json success?
+              // Assuming 200 OK means success or check json
+              if (saveRes.ok) {
+                break;
+              } else {
+                await new Promise(r => setTimeout(r, 1000));
+                continue;
+              }
+            }
+
+            setProcessingStatus("success");
+            // Clear everything after delay?
+            setTimeout(() => setProcessingStatus("idle"), 3000);
+
+          } catch (err) {
+            console.error("Background DAC Save Error", err);
+            setProcessingStatus("error");
+            setFailedStage("save-approval");
+            setErrorMessage("Gagal menyimpan approval ke DAC");
+          }
         }
       }
     } catch (err) {
       console.error("Error in post-submit logic:", err);
+      // General error fallback
+      setProcessingStatus("error");
+      setFailedStage("save-approval"); // Assume post-submit error is approval related
+      setErrorMessage("Error logic after submit");
     }
   };
   const executeSaveApproval = async (payload: any) => {
@@ -1107,16 +1202,69 @@ export default function Home() {
     <div className="flex h-screen w-full bg-zinc-50 dark:bg-black overflow-hidden relative">
       {/* Main Content */}
       <div
-        className={`flex-1 h-full overflow-hidden relative bg-zinc-50/50 dark:bg-zinc-900/50 ${
-          sidebarPosition === "left" ? "order-2" : "order-1"
-        }`}
+        className={`flex-1 h-full overflow-hidden relative bg-zinc-50/50 dark:bg-zinc-900/50 ${sidebarPosition === "left" ? "order-2" : "order-1"
+          }`}
       >
         <div className="h-full overflow-y-auto p-4 md:p-6 custom-scrollbar">
           {parsedData && !detailLoading ? (
             <div className="max-w-5xl mx-auto flex flex-col gap-6">
               {/* Header Info Parsed */}
-              <div className="bg-white dark:bg-zinc-800 rounded-xl shadow-sm border border-zinc-200 dark:border-zinc-700 p-5">
+              <div className="bg-white dark:bg-zinc-800 rounded-xl shadow-sm border border-zinc-200 dark:border-zinc-700 p-5 relative">
+                <div className="absolute top-5 right-5 z-20">
+                  <ProcessStatusLight
+                    status={processingStatus}
+                    failedStage={failedStage}
+                    errorMessage={errorMessage}
+                    onRetry={() => {
+                      const session = localStorage.getItem("datasource_session") || "";
+                      if (!session) return;
+
+                      // Guard: Ensure we have necessary data
+                      if (!retryPayloads.item || !retryPayloads.currentParsedData) {
+                        alert("Data retry tidak lengkap. Silakan refresh halaman.");
+                        return;
+                      }
+
+                      if (failedStage === "submit" && retryPayloads.submitPayload) {
+                        handleSubmissionProcess(
+                          session,
+                          retryPayloads.submitPayload,
+                          retryPayloads.item,
+                          retryPayloads.currentParsedData,
+                          false, // shouldWaitUser
+                          true // isRetry
+                        );
+                      } else if (failedStage === "save-approval" && retryPayloads.approvalPayload) {
+                        // Optimised Retry: Use the saved payload directly
+                        setProcessingStatus("processing");
+                        setErrorMessage("");
+
+                        fetch("/api/save-approval", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify(retryPayloads.approvalPayload),
+                        })
+                          .then(async (res) => {
+                            if (res.ok) {
+                              setProcessingStatus("success");
+                              setTimeout(() => setProcessingStatus("idle"), 3000);
+                              setFailedStage("none");
+                            } else {
+                              throw new Error("Failed to save approval");
+                            }
+                          })
+                          .catch((err) => {
+                            console.error("Retry Save Approval Error", err);
+                            setProcessingStatus("error");
+                            setFailedStage("save-approval");
+                            setErrorMessage("Gagal menyimpan approval ke DAC (Retry)");
+                          });
+                      }
+                    }}
+                  />
+                </div>
                 <h2 className="text-lg font-semibold text-zinc-900 dark:text-white mb-4 border-b dark:border-zinc-700 pb-2">
+
                   Informasi Sekolah
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-4 gap-x-8">
@@ -1172,24 +1320,22 @@ export default function Home() {
                     {parsedData.history.map((log, idx) => (
                       <div
                         key={idx}
-                        className={`border dark:border-zinc-700 rounded-lg p-4 dark:bg-zinc-900/30 ${
-                          log.status.toLowerCase().includes("setuju") ||
+                        className={`border dark:border-zinc-700 rounded-lg p-4 dark:bg-zinc-900/30 ${log.status.toLowerCase().includes("setuju") ||
                           log.status.toLowerCase().includes("terima")
-                            ? "bg-green-100"
-                            : "bg-red-100"
-                        }`}
+                          ? "bg-green-100"
+                          : "bg-red-100"
+                          }`}
                       >
                         <div className="flex justify-between items-start mb-2">
                           <span className="text-xs text-zinc-500 font-mono">
                             {log.date}
                           </span>
                           <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                              log.status.toLowerCase().includes("setuju") ||
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${log.status.toLowerCase().includes("setuju") ||
                               log.status.toLowerCase().includes("terima")
-                                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                            }`}
+                              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                              : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                              }`}
                           >
                             {log.status}
                           </span>
@@ -1267,11 +1413,10 @@ export default function Home() {
 
       {/* Sidebar */}
       <div
-        className={`flex-shrink-0 h-full ${
-          sidebarPosition === "left"
-            ? "order-1 border-r border-zinc-700"
-            : "order-2 border-l border-zinc-700"
-        }`}
+        className={`flex-shrink-0 h-full ${sidebarPosition === "left"
+          ? "order-1 border-r border-zinc-700"
+          : "order-2 border-l border-zinc-700"
+          }`}
       >
         <Sidebar
           pendingCount={sheetData.length - currentTaskIndex}
@@ -1309,9 +1454,8 @@ export default function Home() {
           />
 
           <div
-            className={`absolute top-0 bottom-0 z-50 flex flex-col bg-black/95 backdrop-blur-sm transition-all duration-300 ${
-              sidebarPosition === "left" ? "left-96 right-0" : "left-0 right-96"
-            }`}
+            className={`absolute top-0 bottom-0 z-50 flex flex-col bg-black/95 backdrop-blur-sm transition-all duration-300 ${sidebarPosition === "left" ? "left-96 right-0" : "left-0 right-96"
+              }`}
             onClick={() => setCurrentImageIndex(null)}
           >
             {/* Sticky Info */}
@@ -1376,7 +1520,7 @@ export default function Home() {
                 e.stopPropagation();
                 setCurrentImageIndex(
                   (currentImageIndex - 1 + parsedData.images.length) %
-                    parsedData.images.length,
+                  parsedData.images.length,
                 );
               }}
               className="absolute left-4 top-1/2 -translate-y-1/2 text-white/50 hover:text-white text-6xl transition-colors p-4"
@@ -1411,11 +1555,10 @@ export default function Home() {
                 Edit Catatan Approval DAC
               </h3>
               <span
-                className={`px-2 py-1 rounded text-[10px] font-bold ${
-                  pendingApprovalData?.status === 2
-                    ? "bg-green-900 text-green-400"
-                    : "bg-red-900 text-red-400"
-                }`}
+                className={`px-2 py-1 rounded text-[10px] font-bold ${pendingApprovalData?.status === 2
+                  ? "bg-green-900 text-green-400"
+                  : "bg-red-900 text-red-400"
+                  }`}
               >
                 {pendingApprovalData?.status === 2 ? "APPROVE" : "REJECT"}
               </span>
