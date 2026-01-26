@@ -1,4 +1,4 @@
-import { useRef, useState, useMemo, useEffect } from "react";
+import { useRef, useState, useMemo } from "react";
 import { useDraggable } from "./hooks/useDraggable";
 
 interface StickyInfoBoxProps {
@@ -7,6 +7,11 @@ interface StickyInfoBoxProps {
   history: any[];
   date?: string;
   setDate?: (date: string) => void;
+  // Datadik Props
+  kepsek: string | null;
+  guruList: any[];
+  isLoadingGuru: boolean;
+  onRefetchDatadik: () => void;
 }
 
 export default function StickyInfoBox({
@@ -15,6 +20,10 @@ export default function StickyInfoBox({
   history,
   date,
   setDate,
+  kepsek,
+  guruList,
+  isLoadingGuru,
+  onRefetchDatadik,
 }: StickyInfoBoxProps) {
   const boxRef = useRef<HTMLDivElement>(null!);
   const { position, handleMouseDown } = useDraggable<HTMLDivElement>(
@@ -23,46 +32,13 @@ export default function StickyInfoBox({
   );
 
   // PTK Search State
-  const [kepsek, setKepsek] = useState<string | null>(null);
-  const [guruList, setGuruList] = useState<any[]>([]);
-  const [isLoadingGuru, setIsLoadingGuru] = useState(false);
   const [guruSearch, setGuruSearch] = useState("");
-  const [showGuruSearch, setShowGuruSearch] = useState(false);
+  const [showHistory, setShowHistory] = useState(true);
 
-  useEffect(() => {
-    if (schoolData.npsn && schoolData.npsn !== "-") {
-      setIsLoadingGuru(true);
-      fetch(`/api/fetch-school-data?npsn=${schoolData.npsn}`, {
-        method: "POST",
-      })
-        .then((res) => {
-          if (!res.ok) throw new Error(res.statusText);
-          return res.json();
-        })
-        .then((data) => {
-          if (data) {
-            setKepsek(data.namaKepsek || "-");
-            let list = data.guruLain || [];
-            if (data.namaKepsek) {
-              list = [
-                { nama: data.namaKepsek, jabatan: "Kepala Sekolah" },
-                ...list,
-              ];
-            }
-            setGuruList(list);
-          }
-        })
-        .catch((err) => console.error("Error fetching guru:", err))
-        .finally(() => setIsLoadingGuru(false));
-    } else {
-      setGuruList([]);
-      setKepsek(null);
-    }
-  }, [schoolData.npsn]);
 
   const filteredGuru = useMemo(() => {
     const pattern = guruSearch.trim().toLowerCase();
-    if (!pattern) return guruList;
+    if (!pattern) return [];
     if (pattern.length <= 1) return [];
     return guruList
       .filter(
@@ -165,61 +141,46 @@ export default function StickyInfoBox({
 
         <div className="p-0">
           <div className="flex justify-between items-center mb-2">
-            <div className="text-[11px] font-extrabold text-zinc-500 uppercase tracking-wide">
+            <div className="text-[11px] font-extrabold text-zinc-500 uppercase tracking-wide flex items-center gap-2">
               Kepala Sekolah :
-            </div>
-            <button
-              onClick={() => setShowGuruSearch(!showGuruSearch)}
-              className={`text-[10px] p-1 rounded transition-colors ${
-                showGuruSearch
-                  ? "bg-yellow-900/30 text-yellow-500"
-                  : "bg-zinc-800 text-zinc-500 hover:text-zinc-300"
-              }`}
-              title={showGuruSearch ? "Sembunyikan Pencarian" : "Tampilkan Pencarian"}
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+              <button
+                onClick={onRefetchDatadik}
+                className="hover:text-white transition-colors"
+                title="Refetch Datadik"
               >
-                <circle cx="11" cy="11" r="8"></circle>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-              </svg>
-            </button>
+                ↻
+              </button>
+            </div>
           </div>
           <div className="mb-3 text-[13px] font-semibold text-zinc-200 bg-sky-900/20 border border-sky-900/50 p-2 rounded block">
             {isLoadingGuru ? "Loading..." : kepsek || "-"}
           </div>
 
-          {showGuruSearch && (
-            <>
-              <input
-                className="w-full bg-zinc-900 border border-zinc-600 rounded px-2 py-1 mb-2 text-white focus:outline-none focus:border-yellow-500 text-[13px]"
-                placeholder="Cari guru..."
-                autoComplete="off"
-                value={guruSearch}
-                onChange={(e) => setGuruSearch(e.target.value)}
-                onMouseEnter={(e) => e.currentTarget.focus()}
-                onKeyDown={(e) => e.stopPropagation()}
-              />
+          <input
+            className="w-full bg-zinc-900 border border-zinc-600 rounded px-2 py-1 mb-2 text-white focus:outline-none focus:border-yellow-500 text-[13px]"
+            placeholder="Cari guru..."
+            autoComplete="off"
+            value={guruSearch}
+            onChange={(e) => setGuruSearch(e.target.value)}
+            onMouseEnter={(e) => e.currentTarget.focus()}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                // setGuruSearch(""); // Keep text as per request
+                e.currentTarget.blur();
+              }
+              e.stopPropagation();
+            }}
+          />
 
-              <div className="max-h-[120px] overflow-y-auto border border-zinc-700 bg-zinc-900 rounded p-1 custom-scrollbar">
-                {filteredGuru.length > 0 ? (
-                  filteredGuru.map((g, idx) => renderGuruItem(g, idx))
-                ) : (
-                  <div className="text-zinc-500 text-xs p-2 text-center">
-                    Tidak ada data ditampilkan.
-                  </div>
-                )}
+          <div className="max-h-[120px] overflow-y-auto border border-zinc-700 bg-zinc-900 rounded p-1 custom-scrollbar">
+            {filteredGuru.length > 0 ? (
+              filteredGuru.map((g, idx) => renderGuruItem(g, idx))
+            ) : (
+              <div className="text-zinc-500 text-xs p-2 text-center">
+                Ketikan nama untuk mencari...
               </div>
-            </>
-          )}
+            )}
+          </div>
         </div>
         {/* ------------------------- */}
 
@@ -260,49 +221,58 @@ export default function StickyInfoBox({
 
         {/* History Info */}
         <div className="">
-          <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
-            Riwayat Approval
+          <div className="flex justify-between items-center mb-2">
+            <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+              Riwayat Approval
+            </div>
+            <button
+              onClick={() => setShowHistory(!showHistory)}
+              className="text-xs text-zinc-500 hover:text-zinc-300 focus:outline-none"
+            >
+              {showHistory ? "Sembunyikan" : "Tampilkan"}
+            </button>
           </div>
-          {history && history.length > 0 ? (
-            <div className="space-y-3">
-              {history.map((log: any, idx: number) => (
-                <div
-                  key={idx}
-                  className={`border border-zinc-700 rounded p-2 ${
-                    log.status.toLowerCase().includes("setuju") ||
-                    log.status.toLowerCase().includes("terima")
+
+          {showHistory && (
+            history && history.length > 0 ? (
+              <div className="space-y-3">
+                {history.map((log: any, idx: number) => (
+                  <div
+                    key={idx}
+                    className={`border border-zinc-700 rounded p-2 ${log.status.toLowerCase().includes("setuju") ||
+                      log.status.toLowerCase().includes("terima")
                       ? "bg-green-900/20 border-green-900/50"
                       : "bg-red-900/20 border-red-900/50"
-                  }`}
-                >
-                  <div className="flex justify-between items-start mb-1">
-                    <span className="text-[10px] text-zinc-500 font-mono">
-                      {log.date}
-                    </span>
-                    <span
-                      className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
-                        log.status.toLowerCase().includes("setuju") ||
-                        log.status.toLowerCase().includes("terima")
+                      }`}
+                  >
+                    <div className="flex justify-between items-start mb-1">
+                      <span className="text-[10px] text-zinc-500 font-mono">
+                        {log.date}
+                      </span>
+                      <span
+                        className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${log.status.toLowerCase().includes("setuju") ||
+                          log.status.toLowerCase().includes("terima")
                           ? "bg-green-900/50 text-green-400"
                           : "bg-red-900/50 text-red-400"
-                      }`}
-                    >
-                      {log.status}
-                    </span>
-                  </div>
-                  {log.user && (
-                    <div className="text-xs font-semibold text-zinc-300 mb-0.5">
-                      {log.user}
+                          }`}
+                      >
+                        {log.status}
+                      </span>
                     </div>
-                  )}
-                  <div className="text-xs text-zinc-400 italic">{log.note}</div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-xs text-zinc-600 italic">
-              Belum ada riwayat.
-            </div>
+                    {log.user && (
+                      <div className="text-xs font-semibold text-zinc-300 mb-0.5">
+                        {log.user}
+                      </div>
+                    )}
+                    <div className="text-xs text-zinc-400 italic">{log.note}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-xs text-zinc-600 italic">
+                Belum ada riwayat.
+              </div>
+            )
           )}
         </div>
       </div>

@@ -104,6 +104,72 @@ export default function Home() {
     new Date().toISOString().split("T")[0],
   );
 
+  // Datadik State
+  const [datadikData, setDatadikData] = useState<{
+    kepsek: string | null;
+    guruList: any[];
+    isLoading: boolean;
+  }>({ kepsek: null, guruList: [], isLoading: false });
+  const datadikCache = useRef<Map<string, any>>(new Map());
+
+  const formatGuruList = (data: any) => {
+    let list = data.guruLain || [];
+    if (data.namaKepsek) {
+      list = [{ nama: data.namaKepsek, jabatan: "Kepala Sekolah" }, ...list];
+    }
+    return list;
+  };
+
+  const fetchDatadik = async (npsn: string, forceRefetch = false) => {
+    if (!npsn || npsn === "-") {
+      setDatadikData({ kepsek: null, guruList: [], isLoading: false });
+      return;
+    }
+
+    if (!forceRefetch && datadikCache.current.has(npsn)) {
+      console.log("Using cached datadik for", npsn);
+      const cached = datadikCache.current.get(npsn);
+      setDatadikData({
+        kepsek: cached.namaKepsek || "-",
+        guruList: formatGuruList(cached),
+        isLoading: false,
+      });
+      return;
+    }
+
+    if (forceRefetch) {
+      setDatadikData((prev) => ({ ...prev, isLoading: true }));
+    } else {
+      setDatadikData({ kepsek: null, guruList: [], isLoading: true });
+    }
+
+    try {
+      const res = await fetch(`/api/fetch-school-data?npsn=${npsn}`, {
+        method: "POST",
+      });
+      // Accept 200 with error field as well, based on the route implementation
+      const data = await res.json();
+
+      if (data) {
+        datadikCache.current.set(npsn, data);
+        setDatadikData({
+          kepsek: data.namaKepsek || "-",
+          guruList: formatGuruList(data),
+          isLoading: false,
+        });
+      }
+    } catch (e) {
+      console.error("Error fetching datadik:", e);
+      setDatadikData({ kepsek: null, guruList: [], isLoading: false });
+    }
+  };
+
+  useEffect(() => {
+    if (parsedData?.school?.npsn) {
+      fetchDatadik(parsedData.school.npsn);
+    }
+  }, [parsedData?.school?.npsn]);
+
   useEffect(() => {
     // Check localStorage for BACKWARD COMPATIBILITY
     const oldSession = localStorage.getItem("ci_session");
@@ -171,14 +237,14 @@ export default function Home() {
           try {
             const { username } = JSON.parse(dacCache);
             setDacUsername(username || "");
-          } catch (e) {}
+          } catch (e) { }
         }
         const dsCache = localStorage.getItem("login_cache_datasource");
         if (dsCache) {
           try {
             const { username } = JSON.parse(dsCache);
             setDataSourceUsername(username || "");
-          } catch (e) {}
+          } catch (e) { }
         }
       },
     );
@@ -331,6 +397,16 @@ export default function Home() {
       }
     } catch (err) {
       console.error("Prefetch error:", err);
+    }
+
+    // Prefetch Datadik
+    if (item.npsn && !datadikCache.current.has(item.npsn)) {
+      fetch(`/api/fetch-school-data?npsn=${item.npsn}`, { method: "POST" })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data) datadikCache.current.set(item.npsn, data);
+        })
+        .catch((e) => console.error("Prefetch Datadik Error", e));
     }
   };
 
@@ -584,11 +660,13 @@ export default function Home() {
     const newOptions: EvaluationField[] = [];
     const newDefaults: Record<string, string> = {};
 
+    // 1. Collect all raw options first
+    const rawOptionsMap: Record<string, string[]> = {};
+
     fieldMapping.forEach((field) => {
       const select = doc.querySelector(`select[name="${field.name}"]`);
       const opts: string[] = [];
       if (select) {
-        // Find optgroups/options. The dump shows options inside optgroup
         const options = select.querySelectorAll("option");
         options.forEach((opt) => {
           const val = opt.value;
@@ -597,11 +675,47 @@ export default function Home() {
           }
         });
       }
+      rawOptionsMap[field.id] = opts;
+    });
+
+    // 2. Calculate Intersection for Q and R
+    const optionsQ = rawOptionsMap["Q"] || [];
+    const optionsR = rawOptionsMap["R"] || [];
+
+    // Helper: Get intersection excluding the first item (assuming first item is always fixed e.g. "Sesuai")
+    // We treat the first item of each list as "Fixed" and don't include it in common pool sorting
+    // Actually, usually the first item is "Sesuai", which is common. 
+    // BUT the requirement is "Keep 1st option fixed". So we take rest.
+    const restQ = optionsQ.length > 0 ? optionsQ.slice(1) : [];
+    const restR = optionsR.length > 0 ? optionsR.slice(1) : [];
+
+    const commonOptions = restQ.filter(q => restR.includes(q));
+
+    // 3. Build Final Options
+    fieldMapping.forEach((field) => {
+      let finalOpts = rawOptionsMap[field.id] || [];
+
+      // SORTING LOGIC for BAPP HAL 1 (Q) & BAPP HAL 2 (R)
+      if ((field.id === "Q" || field.id === "R") && finalOpts.length > 1) {
+        const first = finalOpts[0];
+        const rest = finalOpts.slice(1);
+
+        // Split rest into Common vs Unique
+        const commonInThis = rest.filter(o => commonOptions.includes(o));
+        const uniqueInThis = rest.filter(o => !commonOptions.includes(o));
+
+        // Sort each group
+        commonInThis.sort((a, b) => a.localeCompare(b));
+        uniqueInThis.sort((a, b) => a.localeCompare(b));
+
+        // Merge: First -> Common -> Unique
+        finalOpts = [first, ...commonInThis, ...uniqueInThis];
+      }
 
       // Fallback if no options found? Or maybe keep empty?
-      if (opts.length > 0) {
-        newOptions.push({ ...field, options: opts });
-        newDefaults[field.id] = opts[0];
+      if (finalOpts.length > 0) {
+        newOptions.push({ ...field, options: finalOpts });
+        newDefaults[field.id] = finalOpts[0];
       } else {
         newOptions.push({
           ...field,
@@ -878,7 +992,7 @@ export default function Home() {
               currentDacSession = pureToken;
             }
           }
-        } catch (ignore) {}
+        } catch (ignore) { }
       }
 
       // 4. Proses Simpan Approval
@@ -1203,9 +1317,8 @@ export default function Home() {
     <div className="flex h-screen w-full bg-zinc-50 dark:bg-black overflow-hidden relative">
       {/* Main Content */}
       <div
-        className={`flex-1 h-full overflow-hidden relative bg-zinc-50/50 dark:bg-zinc-900/50 ${
-          sidebarPosition === "left" ? "order-2" : "order-1"
-        }`}
+        className={`flex-1 h-full overflow-hidden relative bg-zinc-50/50 dark:bg-zinc-900/50 ${sidebarPosition === "left" ? "order-2" : "order-1"
+          }`}
       >
         <div className="h-full overflow-y-auto p-4 md:p-6 custom-scrollbar">
           {parsedData && !detailLoading ? (
@@ -1213,74 +1326,6 @@ export default function Home() {
               {/* Header Info Parsed */}
               <div className="bg-white dark:bg-zinc-800 rounded-xl shadow-sm border border-zinc-200 dark:border-zinc-700 p-5 relative">
                 <div className="absolute top-5 right-5 z-20">
-                  <ProcessStatusLight
-                    status={processingStatus}
-                    failedStage={failedStage}
-                    errorMessage={errorMessage}
-                    onRetry={() => {
-                      const session =
-                        localStorage.getItem("datasource_session") || "";
-                      if (!session) return;
-
-                      // Guard: Ensure we have necessary data
-                      if (
-                        !retryPayloads.item ||
-                        !retryPayloads.currentParsedData
-                      ) {
-                        alert(
-                          "Data retry tidak lengkap. Silakan refresh halaman.",
-                        );
-                        return;
-                      }
-
-                      if (
-                        failedStage === "submit" &&
-                        retryPayloads.submitPayload
-                      ) {
-                        handleSubmissionProcess(
-                          session,
-                          retryPayloads.submitPayload,
-                          retryPayloads.item,
-                          retryPayloads.currentParsedData,
-                          false, // shouldWaitUser
-                          true, // isRetry
-                        );
-                      } else if (
-                        failedStage === "save-approval" &&
-                        retryPayloads.approvalPayload
-                      ) {
-                        // Optimised Retry: Use the saved payload directly
-                        setProcessingStatus("processing");
-                        setErrorMessage("");
-
-                        fetch("/api/save-approval", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify(retryPayloads.approvalPayload),
-                        })
-                          .then(async (res) => {
-                            if (res.ok) {
-                              setProcessingStatus("success");
-                              setTimeout(
-                                () => setProcessingStatus("idle"),
-                                3000,
-                              );
-                              setFailedStage("none");
-                            } else {
-                              throw new Error("Failed to save approval");
-                            }
-                          })
-                          .catch((err) => {
-                            console.error("Retry Save Approval Error", err);
-                            setProcessingStatus("error");
-                            setFailedStage("save-approval");
-                            setErrorMessage(
-                              "Gagal menyimpan approval ke DAC (Retry)",
-                            );
-                          });
-                      }
-                    }}
-                  />
                 </div>
                 <h2 className="text-lg font-semibold text-zinc-900 dark:text-white mb-4 border-b dark:border-zinc-700 pb-2">
                   Informasi Sekolah
@@ -1338,24 +1383,22 @@ export default function Home() {
                     {parsedData.history.map((log, idx) => (
                       <div
                         key={idx}
-                        className={`border dark:border-zinc-700 rounded-lg p-4 dark:bg-zinc-900/30 ${
-                          log.status.toLowerCase().includes("setuju") ||
+                        className={`border dark:border-zinc-700 rounded-lg p-4 dark:bg-zinc-900/30 ${log.status.toLowerCase().includes("setuju") ||
                           log.status.toLowerCase().includes("terima")
-                            ? "bg-green-100"
-                            : "bg-red-100"
-                        }`}
+                          ? "bg-green-100"
+                          : "bg-red-100"
+                          }`}
                       >
                         <div className="flex justify-between items-start mb-2">
                           <span className="text-xs text-zinc-500 font-mono">
                             {log.date}
                           </span>
                           <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                              log.status.toLowerCase().includes("setuju") ||
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${log.status.toLowerCase().includes("setuju") ||
                               log.status.toLowerCase().includes("terima")
-                                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                            }`}
+                              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                              : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                              }`}
                           >
                             {log.status}
                           </span>
@@ -1433,11 +1476,10 @@ export default function Home() {
 
       {/* Sidebar */}
       <div
-        className={`flex-shrink-0 h-full ${
-          sidebarPosition === "left"
-            ? "order-1 border-r border-zinc-700"
-            : "order-2 border-l border-zinc-700"
-        }`}
+        className={`flex-shrink-0 h-full ${sidebarPosition === "left"
+          ? "order-1 border-r border-zinc-700"
+          : "order-2 border-l border-zinc-700"
+          }`}
       >
         <Sidebar
           pendingCount={sheetData.length - currentTaskIndex}
@@ -1461,6 +1503,59 @@ export default function Home() {
           currentItemSn={sheetData[currentTaskIndex]?.serial_number}
           dataSourceUsername={dataSourceUsername}
           sheetData={sheetData}
+          // Status Props
+          processingStatus={processingStatus}
+          failedStage={failedStage}
+          errorMessage={errorMessage}
+          onRetry={() => {
+            const session = localStorage.getItem("datasource_session") || "";
+            if (!session) return;
+
+            // Guard: Ensure we have necessary data
+            if (!retryPayloads.item || !retryPayloads.currentParsedData) {
+              alert("Data retry tidak lengkap. Silakan refresh halaman.");
+              return;
+            }
+
+            if (failedStage === "submit" && retryPayloads.submitPayload) {
+              handleSubmissionProcess(
+                session,
+                retryPayloads.submitPayload,
+                retryPayloads.item,
+                retryPayloads.currentParsedData,
+                false, // shouldWaitUser
+                true, // isRetry
+              );
+            } else if (
+              failedStage === "save-approval" &&
+              retryPayloads.approvalPayload
+            ) {
+              // Optimised Retry: Use the saved payload directly
+              setProcessingStatus("processing");
+              setErrorMessage("");
+
+              fetch("/api/save-approval", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(retryPayloads.approvalPayload),
+              })
+                .then(async (res) => {
+                  if (res.ok) {
+                    setProcessingStatus("success");
+                    setTimeout(() => setProcessingStatus("idle"), 3000);
+                    setFailedStage("none");
+                  } else {
+                    throw new Error("Failed to save approval");
+                  }
+                })
+                .catch((err) => {
+                  console.error("Retry Save Approval Error", err);
+                  setProcessingStatus("error");
+                  setFailedStage("save-approval");
+                  setErrorMessage("Gagal menyimpan approval ke DAC (Retry)");
+                });
+            }
+          }}
         />
       </div>
 
@@ -1473,12 +1568,18 @@ export default function Home() {
             history={parsedData.history}
             date={verificationDate}
             setDate={setVerificationDate}
+            // Datadik Props
+            kepsek={datadikData.kepsek}
+            guruList={datadikData.guruList}
+            isLoadingGuru={datadikData.isLoading}
+            onRefetchDatadik={() =>
+              fetchDatadik(parsedData?.school?.npsn || "", true)
+            }
           />
 
           <div
-            className={`absolute top-0 bottom-0 z-50 flex flex-col bg-black/95 backdrop-blur-sm transition-all duration-300 ${
-              sidebarPosition === "left" ? "left-96 right-0" : "left-0 right-96"
-            }`}
+            className={`absolute top-0 bottom-0 z-50 flex flex-col bg-black/95 backdrop-blur-sm transition-all duration-300 ${sidebarPosition === "left" ? "left-96 right-0" : "left-0 right-96"
+              }`}
             onClick={() => setCurrentImageIndex(null)}
           >
             {/* Sticky Info */}
@@ -1543,7 +1644,7 @@ export default function Home() {
                 e.stopPropagation();
                 setCurrentImageIndex(
                   (currentImageIndex - 1 + parsedData.images.length) %
-                    parsedData.images.length,
+                  parsedData.images.length,
                 );
               }}
               className="absolute left-4 top-1/2 -translate-y-1/2 text-white/50 hover:text-white text-6xl transition-colors p-4"
@@ -1578,11 +1679,10 @@ export default function Home() {
                 Edit Catatan Approval DAC
               </h3>
               <span
-                className={`px-2 py-1 rounded text-[10px] font-bold ${
-                  pendingApprovalData?.status === 2
-                    ? "bg-green-900 text-green-400"
-                    : "bg-red-900 text-red-400"
-                }`}
+                className={`px-2 py-1 rounded text-[10px] font-bold ${pendingApprovalData?.status === 2
+                  ? "bg-green-900 text-green-400"
+                  : "bg-red-900 text-red-400"
+                  }`}
               >
                 {pendingApprovalData?.status === 2 ? "APPROVE" : "REJECT"}
               </span>

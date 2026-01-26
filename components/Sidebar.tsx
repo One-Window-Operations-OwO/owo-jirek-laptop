@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Spinner from "./Spinner";
+import ProcessStatusLight from "./ProcessStatusLight";
 
 export interface EvaluationField {
   id: string;
@@ -104,10 +105,9 @@ const RadioOption = ({
     onClick={() => onChange(fieldId, option)}
     disabled={disabled}
     className={`px-3 py-1 text-xs rounded-full border transition-colors disabled:opacity-50 mb-1 mr-1
-      ${
-        checked
-          ? "bg-blue-500 border-blue-500 text-white font-semibold"
-          : "bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600 hover:border-gray-500"
+      ${checked
+        ? "bg-blue-500 border-blue-500 text-white font-semibold"
+        : "bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600 hover:border-gray-500"
       }`}
   >
     {option}
@@ -135,6 +135,11 @@ interface SidebarProps {
   dataSourceUsername?: string;
   currentItemSn?: string;
   sheetData?: any[];
+  // Status Props
+  processingStatus?: "idle" | "processing" | "success" | "error";
+  failedStage?: "none" | "submit" | "save-approval";
+  errorMessage?: string;
+  onRetry?: () => void;
 }
 
 export const defaultEvaluationValues: Record<string, string> = {
@@ -173,6 +178,11 @@ export default function Sidebar({
   dataSourceUsername,
   currentItemSn,
   sheetData,
+  // Status Props
+  processingStatus = "idle",
+  failedStage = "none",
+  errorMessage = "",
+  onRetry,
 }: SidebarProps & {
   currentImageIndex: number | null;
   snBapp?: string;
@@ -277,29 +287,38 @@ export default function Sidebar({
     return allowedFields.includes(field.id);
   });
 
+
   return (
     <aside className="w-96 bg-gray-800 text-white flex-shrink-0 flex flex-col p-4 h-full overflow-hidden border-r border-gray-700 relative">
+      {/* Process Status Light (Moved from Page) */}
+      <div className="mb-4">
+        <ProcessStatusLight
+          status={processingStatus}
+          failedStage={failedStage}
+          errorMessage={errorMessage}
+          onRetry={onRetry || (() => { })}
+        />
+      </div>
+
       {/* Top Toolbar: Filter Toggles */}
       <div className="flex justify-between items-center flex-shrink-0 gap-2">
         {currentImageIndex !== null ? (
           <div className="flex bg-gray-700 rounded p-1 flex-grow mb-4">
             <button
               onClick={() => setFilterMode("specific")}
-              className={`flex-1 py-1 text-xs rounded font-bold transition-all ${
-                filterMode === "specific"
-                  ? "bg-blue-600 text-white shadow"
-                  : "text-gray-400 hover:text-gray-200"
-              }`}
+              className={`flex-1 py-1 text-xs rounded font-bold transition-all ${filterMode === "specific"
+                ? "bg-blue-600 text-white shadow"
+                : "text-gray-400 hover:text-gray-200"
+                }`}
             >
               Filtered
             </button>
             <button
               onClick={() => setFilterMode("all")}
-              className={`flex-1 py-1 text-xs rounded font-bold transition-all ${
-                filterMode === "all"
-                  ? "bg-blue-600 text-white shadow"
-                  : "text-gray-400 hover:text-gray-200"
-              }`}
+              className={`flex-1 py-1 text-xs rounded font-bold transition-all ${filterMode === "all"
+                ? "bg-blue-600 text-white shadow"
+                : "text-gray-400 hover:text-gray-200"
+                }`}
             >
               Default
             </button>
@@ -317,7 +336,7 @@ export default function Sidebar({
             evaluationForm["O"] !== "Ada" && evaluationForm["O"] !== "Sesuai"
               ? "block"
               : "hidden"
-          }`}
+            }`}
         >
           <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider block mb-1">
             Input SN BAPP
@@ -429,14 +448,12 @@ export default function Sidebar({
               </span>
               <button
                 onClick={() => setEnableManualNote(!enableManualNote)}
-                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${
-                  enableManualNote ? "bg-blue-600" : "bg-gray-600"
-                }`}
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${enableManualNote ? "bg-blue-600" : "bg-gray-600"
+                  }`}
               >
                 <span
-                  className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
-                    enableManualNote ? "translate-x-5" : "translate-x-1"
-                  }`}
+                  className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${enableManualNote ? "translate-x-5" : "translate-x-1"
+                    }`}
                 />
               </button>
             </div>
@@ -497,21 +514,19 @@ export default function Sidebar({
                       <div className="flex bg-gray-900 p-1 rounded border border-gray-600">
                         <button
                           onClick={() => setPosition("left")}
-                          className={`flex-1 py-1 text-xs rounded transition-all ${
-                            position === "left"
-                              ? "bg-blue-600 text-white"
-                              : "text-gray-400 hover:text-gray-200"
-                          }`}
+                          className={`flex-1 py-1 text-xs rounded transition-all ${position === "left"
+                            ? "bg-blue-600 text-white"
+                            : "text-gray-400 hover:text-gray-200"
+                            }`}
                         >
                           Left
                         </button>
                         <button
                           onClick={() => setPosition("right")}
-                          className={`flex-1 py-1 text-xs rounded transition-all ${
-                            position === "right"
-                              ? "bg-blue-600 text-white"
-                              : "text-gray-400 hover:text-gray-200"
-                          }`}
+                          className={`flex-1 py-1 text-xs rounded transition-all ${position === "right"
+                            ? "bg-blue-600 text-white"
+                            : "text-gray-400 hover:text-gray-200"
+                            }`}
                         >
                           Right
                         </button>
@@ -601,18 +616,16 @@ export default function Sidebar({
           <button
             onClick={() => handleSkip(true)}
             disabled={buttonsDisabled}
-            className={`flex-1 p-3 bg-gray-500 rounded-md text-white font-bold hover:bg-gray-400 disabled:opacity-50 transition-colors ${
-              isSubmitting ? "animate-pulse" : ""
-            }`}
+            className={`flex-1 p-3 bg-gray-500 rounded-md text-white font-bold hover:bg-gray-400 disabled:opacity-50 transition-colors ${isSubmitting ? "animate-pulse" : ""
+              }`}
           >
             {isSubmitting ? <Spinner /> : "SKIP"}
           </button>
           <button
             onClick={mainButtonAction}
             disabled={buttonsDisabled}
-            className={`flex-1 p-3 rounded-md text-white font-bold disabled:opacity-50 transition-colors ${mainButtonColor} ${
-              isSubmitting ? "animate-pulse" : ""
-            }`}
+            className={`flex-1 p-3 rounded-md text-white font-bold disabled:opacity-50 transition-colors ${mainButtonColor} ${isSubmitting ? "animate-pulse" : ""
+              }`}
           >
             {isSubmitting ? <Spinner /> : mainButtonLabel}
           </button>

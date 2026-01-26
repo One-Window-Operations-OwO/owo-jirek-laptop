@@ -16,7 +16,7 @@ export default function ProcessStatusLight({
     onRetry,
     errorMessage,
 }: ProcessStatusLightProps) {
-    if (status === "idle") return null;
+    // if (status === "idle") return null; // Removed to make it always visible
 
     return (
         <div className="flex items-center gap-3 bg-white dark:bg-zinc-800 px-4 py-2 rounded-full shadow border border-zinc-200 dark:border-zinc-700">
@@ -30,10 +30,12 @@ export default function ProcessStatusLight({
                     )}
                     <span
                         className={`relative inline-flex rounded-full h-3 w-3 ${status === "success"
-                                ? "bg-green-500"
-                                : status === "processing"
-                                    ? "bg-yellow-500"
-                                    : "bg-red-500"
+                            ? "bg-green-500"
+                            : status === "processing"
+                                ? "bg-yellow-500"
+                                : status === "error"
+                                    ? "bg-red-500"
+                                    : "bg-zinc-400" // idle color
                             }`}
                     ></span>
                 </div>
@@ -42,7 +44,9 @@ export default function ProcessStatusLight({
                         ? "Berhasil Disimpan"
                         : status === "processing"
                             ? "Sedang Memproses..."
-                            : "Terjadi Kesalahan"}
+                            : status === "error"
+                                ? "Terjadi Kesalahan"
+                                : "Siap"}
                 </span>
             </div>
 
